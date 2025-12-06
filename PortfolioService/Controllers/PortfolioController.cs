@@ -84,10 +84,8 @@ public class PortfolioController : ControllerBase
         if (request.Price <= 0)
             return BadRequest(new { error = "Price must be positive" });
 
-        // Получаем настройки пользователя из UserService
         var preferences = await _userServiceClient.GetUserPreferencesAsync(userId);
 
-        // Проверка черного списка категорий
         if (preferences != null && 
             _coolingCalculator.IsCategoryBlacklisted(request.Category, preferences.BlacklistedCategories))
         {
@@ -98,10 +96,8 @@ public class PortfolioController : ControllerBase
             });
         }
 
-        // Рассчитываем период охлаждения из CoolingService
         var coolingDays = await _coolingCalculator.CalculateCoolingDaysAsync(request.Price, userId);
         
-        // Учитываем накопления, если включено
         if (preferences?.ConsiderSavings == true)
         {
             var savingsDays = _coolingCalculator.CalculateSavingsRequiredDays(
@@ -124,7 +120,6 @@ public class PortfolioController : ControllerBase
             Status = GoalStatus.Cooling
         };
 
-        // Расчет дефицита средств
         if (preferences != null && request.Price > preferences.CurrentSavings)
             goal.PriceGap = request.Price - preferences.CurrentSavings;
 
