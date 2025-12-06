@@ -55,12 +55,6 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Auto-migrate
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<CoolingDbContext>();
-    db.Database.EnsureCreated();
-}
 
 app.UseSwagger();
 app.UseSwaggerUI();
