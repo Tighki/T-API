@@ -9,12 +9,12 @@ namespace CoolingService.Controllers;
 [Route("api/v1/cooling")]
 public class CoolingPeriodController : ControllerBase
 {
-    private readonly IDataStore _dataStore;
+    private readonly ICoolingRepository _repository;
     private readonly ILogger<CoolingPeriodController> _logger;
 
-    public CoolingPeriodController(IDataStore dataStore, ILogger<CoolingPeriodController> logger)
+    public CoolingPeriodController(ICoolingRepository repository, ILogger<CoolingPeriodController> logger)
     {
-        _dataStore = dataStore;
+        _repository = repository;
         _logger = logger;
     }
 
@@ -23,12 +23,12 @@ public class CoolingPeriodController : ControllerBase
     /// </summary>
     [HttpGet("cooling-ranges")]
     [ProducesResponseType(typeof(List<CoolingPeriodResponse>), StatusCodes.Status200OK)]
-    public IActionResult GetCoolingRanges([FromHeader(Name = "X-User-Id")] string userId)
+    public async Task<IActionResult> GetCoolingRanges([FromHeader(Name = "X-User-Id")] string userId)
     {
         if (string.IsNullOrWhiteSpace(userId))
             return BadRequest(new { error = "User ID is required in X-User-Id header" });
 
-        var periods = _dataStore.GetCoolingPeriods(userId);
+        var periods = await _repository.GetCoolingPeriodsAsync(userId);
         var response = periods.Select(p => new CoolingPeriodResponse
         {
             Id = p.Id,
@@ -46,7 +46,7 @@ public class CoolingPeriodController : ControllerBase
     [HttpPost("cooling-ranges")]
     [ProducesResponseType(typeof(CoolingPeriodResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public IActionResult AddCoolingRange(
+    public async Task<IActionResult> AddCoolingRange(
         [FromHeader(Name = "X-User-Id")] string userId,
         [FromBody] CoolingPeriodRequest request)
     {
@@ -67,7 +67,7 @@ public class CoolingPeriodController : ControllerBase
             CoolingDays = request.CoolingDays
         };
 
-        var saved = _dataStore.AddCoolingPeriod(item);
+        var saved = await _repository.AddCoolingPeriodAsync(item);
         var response = new CoolingPeriodResponse
         {
             Id = saved.Id,
@@ -79,4 +79,3 @@ public class CoolingPeriodController : ControllerBase
         return CreatedAtAction(nameof(GetCoolingRanges), new { userId }, response);
     }
 }
-

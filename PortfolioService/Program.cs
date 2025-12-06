@@ -1,10 +1,17 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using PortfolioService.Data;
 using PortfolioService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddSingleton<IDataStore, InMemoryDataStore>();
+
+// PostgreSQL
+builder.Services.AddDbContext<PortfolioDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddScoped<IPortfolioRepository, PortfolioRepository>();
 builder.Services.AddScoped<ICoolingCalculator, CoolingCalculator>();
 builder.Services.AddSingleton<TokenGenerator>();
 builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>();
@@ -52,6 +59,13 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Auto-migrate
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<PortfolioDbContext>();
+    db.Database.EnsureCreated();
+}
+
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors();
@@ -59,4 +73,3 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
-

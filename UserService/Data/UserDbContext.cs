@@ -17,6 +17,7 @@ public class UserDbContext : DbContext
             entity.Property(e => e.UserId).HasMaxLength(100);
             entity.Property(e => e.MonthlySavings).HasPrecision(18, 2);
             entity.Property(e => e.CurrentSavings).HasPrecision(18, 2);
+            entity.Property(e => e.NotificationFrequency).HasConversion<string>();
             entity.Property(e => e.BlacklistedCategories)
                 .HasConversion(
                     v => string.Join(',', v),
@@ -25,4 +26,3 @@ public class UserDbContext : DbContext
         });
     }
 }
-

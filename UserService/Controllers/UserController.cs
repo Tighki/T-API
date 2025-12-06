@@ -9,12 +9,12 @@ namespace UserService.Controllers;
 [Route("api/v1/user")]
 public class UserController : ControllerBase
 {
-    private readonly IDataStore _dataStore;
+    private readonly IUserRepository _repository;
     private readonly ILogger<UserController> _logger;
 
-    public UserController(IDataStore dataStore, ILogger<UserController> logger)
+    public UserController(IUserRepository repository, ILogger<UserController> logger)
     {
-        _dataStore = dataStore;
+        _repository = repository;
         _logger = logger;
     }
 
@@ -24,26 +24,16 @@ public class UserController : ControllerBase
     [HttpGet("preferences")]
     [ProducesResponseType(typeof(UserPreferencesResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public IActionResult GetPreferences([FromHeader(Name = "X-User-Id")] string userId)
+    public async Task<IActionResult> GetPreferences([FromHeader(Name = "X-User-Id")] string userId)
     {
         if (string.IsNullOrWhiteSpace(userId))
             return BadRequest(new { error = "User ID is required in X-User-Id header" });
 
-        var preferences = _dataStore.GetUserPreferences(userId);
+        var preferences = await _repository.GetUserPreferencesAsync(userId);
         if (preferences == null)
             return NotFound(new { error = "User preferences not found" });
 
-        var response = new UserPreferencesResponse
-        {
-            UserId = preferences.UserId,
-            BlacklistedCategories = preferences.BlacklistedCategories,
-            MonthlySavings = preferences.MonthlySavings,
-            CurrentSavings = preferences.CurrentSavings,
-            ConsiderSavings = preferences.ConsiderSavings,
-            NotificationFrequency = preferences.NotificationFrequency
-        };
-
-        return Ok(response);
+        return Ok(MapToResponse(preferences));
     }
 
     /// <summary>
@@ -51,7 +41,7 @@ public class UserController : ControllerBase
     /// </summary>
     [HttpPut("preferences")]
     [ProducesResponseType(typeof(UserPreferencesResponse), StatusCodes.Status200OK)]
-    public IActionResult UpdatePreferences(
+    public async Task<IActionResult> UpdatePreferences(
         [FromHeader(Name = "X-User-Id")] string userId,
         [FromBody] UserPreferencesRequest request)
     {
@@ -71,18 +61,8 @@ public class UserController : ControllerBase
             NotificationFrequency = request.NotificationFrequency
         };
 
-        var saved = _dataStore.SaveUserPreferences(preferences);
-        var response = new UserPreferencesResponse
-        {
-            UserId = saved.UserId,
-            BlacklistedCategories = saved.BlacklistedCategories,
-            MonthlySavings = saved.MonthlySavings,
-            CurrentSavings = saved.CurrentSavings,
-            ConsiderSavings = saved.ConsiderSavings,
-            NotificationFrequency = saved.NotificationFrequency
-        };
-
-        return Ok(response);
+        var saved = await _repository.SaveUserPreferencesAsync(preferences);
+        return Ok(MapToResponse(saved));
     }
 
     /// <summary>
@@ -90,13 +70,22 @@ public class UserController : ControllerBase
     /// </summary>
     [HttpGet("exists")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-    public IActionResult CheckUserExists([FromHeader(Name = "X-User-Id")] string userId)
+    public async Task<IActionResult> CheckUserExists([FromHeader(Name = "X-User-Id")] string userId)
     {
         if (string.IsNullOrWhiteSpace(userId))
             return BadRequest(new { error = "User ID is required in X-User-Id header" });
 
-        var preferences = _dataStore.GetUserPreferences(userId);
+        var preferences = await _repository.GetUserPreferencesAsync(userId);
         return Ok(new { exists = preferences != null, userId });
     }
-}
 
+    private static UserPreferencesResponse MapToResponse(UserPreferences p) => new()
+    {
+        UserId = p.UserId,
+        BlacklistedCategories = p.BlacklistedCategories,
+        MonthlySavings = p.MonthlySavings,
+        CurrentSavings = p.CurrentSavings,
+        ConsiderSavings = p.ConsiderSavings,
+        NotificationFrequency = p.NotificationFrequency
+    };
+}

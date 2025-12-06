@@ -9,20 +9,20 @@ namespace PortfolioService.Controllers;
 [Route("api/v1/portfolio")]
 public class PortfolioController : ControllerBase
 {
-    private readonly IDataStore _dataStore;
+    private readonly IPortfolioRepository _repository;
     private readonly ICoolingCalculator _coolingCalculator;
     private readonly IUserServiceClient _userServiceClient;
     private readonly TokenGenerator _tokenGenerator;
     private readonly ILogger<PortfolioController> _logger;
 
     public PortfolioController(
-        IDataStore dataStore,
+        IPortfolioRepository repository,
         ICoolingCalculator coolingCalculator,
         IUserServiceClient userServiceClient,
         TokenGenerator tokenGenerator,
         ILogger<PortfolioController> logger)
     {
-        _dataStore = dataStore;
+        _repository = repository;
         _coolingCalculator = coolingCalculator;
         _userServiceClient = userServiceClient;
         _tokenGenerator = tokenGenerator;
@@ -34,12 +34,12 @@ public class PortfolioController : ControllerBase
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<GoalItemResponse>), StatusCodes.Status200OK)]
-    public IActionResult GetPortfolio([FromHeader(Name = "X-User-Id")] string userId)
+    public async Task<IActionResult> GetPortfolio([FromHeader(Name = "X-User-Id")] string userId)
     {
         if (string.IsNullOrWhiteSpace(userId))
             return BadRequest(new { error = "User ID is required in X-User-Id header" });
 
-        var goals = _dataStore.GetGoals(userId);
+        var goals = await _repository.GetGoalsAsync(userId);
         var response = goals.Select(g => MapToResponse(g)).ToList();
 
         return Ok(response);
@@ -51,14 +51,14 @@ public class PortfolioController : ControllerBase
     [HttpGet("{id}")]
     [ProducesResponseType(typeof(GoalItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public IActionResult GetPortfolioItem(
+    public async Task<IActionResult> GetPortfolioItem(
         [FromHeader(Name = "X-User-Id")] string userId,
         int id)
     {
         if (string.IsNullOrWhiteSpace(userId))
             return BadRequest(new { error = "User ID is required in X-User-Id header" });
 
-        var goal = _dataStore.GetGoal(id, userId);
+        var goal = await _repository.GetGoalByIdAsync(userId, id);
         if (goal == null)
             return NotFound(new { error = "Goal not found" });
 
@@ -123,7 +123,7 @@ public class PortfolioController : ControllerBase
         if (preferences != null && request.Price > preferences.CurrentSavings)
             goal.PriceGap = request.Price - preferences.CurrentSavings;
 
-        var saved = _dataStore.AddGoal(goal);
+        var saved = await _repository.AddGoalAsync(goal);
         var response = MapToResponse(saved);
 
         return CreatedAtAction(nameof(GetPortfolioItem), new { id = saved.Id }, response);
@@ -135,7 +135,7 @@ public class PortfolioController : ControllerBase
     [HttpPut("{id}")]
     [ProducesResponseType(typeof(GoalItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public IActionResult UpdateGoal(
+    public async Task<IActionResult> UpdateGoal(
         [FromHeader(Name = "X-User-Id")] string userId,
         int id,
         [FromBody] UpdateGoalRequest request)
@@ -143,7 +143,7 @@ public class PortfolioController : ControllerBase
         if (string.IsNullOrWhiteSpace(userId))
             return BadRequest(new { error = "User ID is required in X-User-Id header" });
 
-        var existing = _dataStore.GetGoal(id, userId);
+        var existing = await _repository.GetGoalByIdAsync(userId, id);
         if (existing == null)
             return NotFound(new { error = "Goal not found" });
 
@@ -156,7 +156,7 @@ public class PortfolioController : ControllerBase
         if (!string.IsNullOrWhiteSpace(request.Category))
             existing.Category = request.Category;
 
-        var updated = _dataStore.UpdateGoal(existing);
+        var updated = await _repository.UpdateGoalAsync(existing);
         return Ok(MapToResponse(updated!));
     }
 
@@ -166,35 +166,31 @@ public class PortfolioController : ControllerBase
     [HttpDelete("{id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public IActionResult DeleteGoal(
+    public async Task<IActionResult> DeleteGoal(
         [FromHeader(Name = "X-User-Id")] string userId,
         int id)
     {
         if (string.IsNullOrWhiteSpace(userId))
             return BadRequest(new { error = "User ID is required in X-User-Id header" });
 
-        var deleted = _dataStore.DeleteGoal(id, userId);
+        var deleted = await _repository.DeleteGoalAsync(userId, id);
         if (!deleted)
             return NotFound(new { error = "Goal not found" });
 
         return NoContent();
     }
 
-    private GoalItemResponse MapToResponse(GoalItem goal)
+    private GoalItemResponse MapToResponse(GoalItem goal) => new()
     {
-        return new GoalItemResponse
-        {
-            Id = goal.Id,
-            Name = goal.Name,
-            Url = goal.Url,
-            Price = goal.Price,
-            PriceGap = goal.PriceGap,
-            Category = goal.Category,
-            AddedAt = goal.AddedAt,
-            CoolingUntil = goal.CoolingUntil,
-            Status = goal.Status,
-            BearerToken = _tokenGenerator.GenerateToken(goal.UserId, goal.Id)
-        };
-    }
+        Id = goal.Id,
+        Name = goal.Name,
+        Url = goal.Url,
+        Price = goal.Price,
+        PriceGap = goal.PriceGap,
+        Category = goal.Category,
+        AddedAt = goal.AddedAt,
+        CoolingUntil = goal.CoolingUntil,
+        Status = goal.Status,
+        BearerToken = _tokenGenerator.GenerateToken(goal.UserId, goal.Id)
+    };
 }
-
