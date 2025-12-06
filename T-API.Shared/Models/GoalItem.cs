@@ -3,7 +3,7 @@ namespace T_API.Shared.Models;
 public class GoalItem
 {
     public int Id { get; set; }
-    public string UserId { get; set; } = string.Empty;
+    public int UserId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Url { get; set; }
     public decimal Price { get; set; }
@@ -23,4 +23,3 @@ public enum GoalStatus
     Rejected,
     Purchased
 }
-

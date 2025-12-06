@@ -1,81 +1,41 @@
 using Microsoft.AspNetCore.Mvc;
 using T_API.Shared.DTOs;
 using T_API.Shared.Models;
+using T_API.Shared.Validation;
+using T_API.Shared.Constants;
 using CoolingService.Services;
 
 namespace CoolingService.Controllers;
 
 [ApiController]
-[Route("api/v1/cooling")]
-public class CoolingPeriodController : ControllerBase
+[Route(Routes.Cooling)]
+public class CoolingPeriodController(ICoolingRepository repository) : ControllerBase
 {
-    private readonly ICoolingRepository _repository;
-    private readonly ILogger<CoolingPeriodController> _logger;
-
-    public CoolingPeriodController(ICoolingRepository repository, ILogger<CoolingPeriodController> logger)
-    {
-        _repository = repository;
-        _logger = logger;
-    }
-
-    /// <summary>
-    /// Получить все диапазоны охлаждения для пользователя
-    /// </summary>
     [HttpGet("cooling-ranges")]
-    [ProducesResponseType(typeof(List<CoolingPeriodResponse>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetCoolingRanges([FromHeader(Name = "X-User-Id")] string userId)
+    public async Task<IActionResult> GetCoolingRanges([FromHeader(Name = Headers.UserId)] int userId)
     {
-        if (string.IsNullOrWhiteSpace(userId))
-            return BadRequest(new { error = "User ID is required in X-User-Id header" });
-
-        var periods = await _repository.GetCoolingPeriodsAsync(userId);
-        var response = periods.Select(p => new CoolingPeriodResponse
+        if (!ValidationRules.IsValidUserId(userId))
+            return BadRequest(new { error = ErrorMessages.InvalidUserId });
+        var periods = await repository.GetCoolingPeriodsAsync(userId);
+        return Ok(periods.Select(p => new CoolingPeriodResponse
         {
-            Id = p.Id,
-            PriceFrom = p.PriceFrom,
-            PriceTo = p.PriceTo,
-            CoolingDays = p.CoolingDays
-        }).ToList();
-
-        return Ok(response);
+            Id = p.Id, PriceFrom = p.PriceFrom, PriceTo = p.PriceTo, CoolingDays = p.CoolingDays
+        }));
     }
 
-    /// <summary>
-    /// Добавить новый диапазон охлаждения
-    /// </summary>
     [HttpPost("cooling-ranges")]
-    [ProducesResponseType(typeof(CoolingPeriodResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> AddCoolingRange(
-        [FromHeader(Name = "X-User-Id")] string userId,
-        [FromBody] CoolingPeriodRequest request)
+    public async Task<IActionResult> AddCoolingRange([FromHeader(Name = Headers.UserId)] int userId, [FromBody] CoolingPeriodRequest req)
     {
-        if (string.IsNullOrWhiteSpace(userId))
-            return BadRequest(new { error = "User ID is required in X-User-Id header" });
+        if (!ValidationRules.IsValidUserId(userId))
+            return BadRequest(new { error = ErrorMessages.InvalidUserId });
+        if (req.PriceFrom < 0 || !ValidationRules.IsValidPrice(req.PriceTo) || req.PriceFrom >= req.PriceTo)
+            return BadRequest(new { error = ErrorMessages.InvalidPriceRange });
+        if (req.CoolingDays <= 0 || req.CoolingDays > 365)
+            return BadRequest(new { error = ErrorMessages.CoolingDaysRange });
 
-        if (request.PriceFrom < 0 || request.PriceTo <= 0 || request.PriceFrom >= request.PriceTo)
-            return BadRequest(new { error = "Invalid price range" });
-
-        if (request.CoolingDays <= 0)
-            return BadRequest(new { error = "Cooling days must be positive" });
-
-        var item = new CoolingPeriodItem
-        {
-            UserId = userId,
-            PriceFrom = request.PriceFrom,
-            PriceTo = request.PriceTo,
-            CoolingDays = request.CoolingDays
-        };
-
-        var saved = await _repository.AddCoolingPeriodAsync(item);
-        var response = new CoolingPeriodResponse
-        {
-            Id = saved.Id,
-            PriceFrom = saved.PriceFrom,
-            PriceTo = saved.PriceTo,
-            CoolingDays = saved.CoolingDays
-        };
-
-        return CreatedAtAction(nameof(GetCoolingRanges), new { userId }, response);
+        var item = new CoolingPeriodItem { UserId = userId, PriceFrom = req.PriceFrom, PriceTo = req.PriceTo, CoolingDays = req.CoolingDays };
+        var saved = await repository.AddCoolingPeriodAsync(item);
+        return CreatedAtAction(nameof(GetCoolingRanges), new { userId },
+            new CoolingPeriodResponse { Id = saved.Id, PriceFrom = saved.PriceFrom, PriceTo = saved.PriceTo, CoolingDays = saved.CoolingDays });
     }
 }

@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using T_API.Shared.Models;
 using UserService.Data;
 
@@ -6,40 +5,30 @@ namespace UserService.Services;
 
 public interface IUserRepository
 {
-    Task<UserPreferences?> GetUserPreferencesAsync(string userId);
+    Task<UserPreferences?> GetUserPreferencesAsync(int userId);
     Task<UserPreferences> SaveUserPreferencesAsync(UserPreferences preferences);
 }
 
-public class UserRepository : IUserRepository
+public class UserRepository(UserDbContext context) : IUserRepository
 {
-    private readonly UserDbContext _context;
+    public async Task<UserPreferences?> GetUserPreferencesAsync(int userId) =>
+        await context.UserPreferences.FindAsync(userId);
 
-    public UserRepository(UserDbContext context)
+    public async Task<UserPreferences> SaveUserPreferencesAsync(UserPreferences prefs)
     {
-        _context = context;
-    }
-
-    public async Task<UserPreferences?> GetUserPreferencesAsync(string userId) =>
-        await _context.UserPreferences.FindAsync(userId);
-
-    public async Task<UserPreferences> SaveUserPreferencesAsync(UserPreferences preferences)
-    {
-        var existing = await _context.UserPreferences.FindAsync(preferences.UserId);
-        
+        var existing = await context.UserPreferences.FindAsync(prefs.UserId);
         if (existing == null)
         {
-            preferences.CreatedAt = DateTime.UtcNow;
-            _context.UserPreferences.Add(preferences);
+            prefs.CreatedAt = DateTime.UtcNow;
+            context.UserPreferences.Add(prefs);
         }
         else
         {
-            preferences.CreatedAt = existing.CreatedAt;
-            preferences.UpdatedAt = DateTime.UtcNow;
-            _context.Entry(existing).CurrentValues.SetValues(preferences);
+            prefs.CreatedAt = existing.CreatedAt;
+            prefs.UpdatedAt = DateTime.UtcNow;
+            context.Entry(existing).CurrentValues.SetValues(prefs);
         }
-
-        await _context.SaveChangesAsync();
-        return preferences;
+        await context.SaveChangesAsync();
+        return prefs;
     }
 }
-

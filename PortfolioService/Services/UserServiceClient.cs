@@ -1,42 +1,25 @@
 using T_API.Shared.DTOs;
-using T_API.Shared.Models;
+using T_API.Shared.Constants;
 
 namespace PortfolioService.Services;
 
 public interface IUserServiceClient
 {
-    Task<UserPreferencesResponse?> GetUserPreferencesAsync(string userId);
+    Task<UserPreferencesResponse?> GetUserPreferencesAsync(int userId);
 }
 
-public class UserServiceClient : IUserServiceClient
+public class UserServiceClient(HttpClient http, IConfiguration config) : IUserServiceClient
 {
-    private readonly HttpClient _httpClient;
-    private readonly IConfiguration _configuration;
-
-    public UserServiceClient(HttpClient httpClient, IConfiguration configuration)
-    {
-        _httpClient = httpClient;
-        _configuration = configuration;
-        _httpClient.BaseAddress = new Uri(_configuration["Services:UserService"] ?? "https://localhost:7002");
-    }
-
-    public async Task<UserPreferencesResponse?> GetUserPreferencesAsync(string userId)
+    public async Task<UserPreferencesResponse?> GetUserPreferencesAsync(int userId)
     {
         try
         {
-            _httpClient.DefaultRequestHeaders.Clear();
-            _httpClient.DefaultRequestHeaders.Add("X-User-Id", userId);
-            
-            var response = await _httpClient.GetAsync("/api/v1/user/preferences");
-            if (!response.IsSuccessStatusCode)
-                return null;
-
-            return await response.Content.ReadFromJsonAsync<UserPreferencesResponse>();
+            http.BaseAddress ??= new Uri(config["Services:UserService"] ?? "http://localhost:5002");
+            http.DefaultRequestHeaders.Clear();
+            http.DefaultRequestHeaders.Add(Headers.UserId, userId.ToString());
+            var resp = await http.GetAsync("/api/v1/user/preferences");
+            return resp.IsSuccessStatusCode ? await resp.Content.ReadFromJsonAsync<UserPreferencesResponse>() : null;
         }
-        catch
-        {
-            return null;
-        }
+        catch { return null; }
     }
 }
-

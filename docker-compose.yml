@@ -37,3 +37,12 @@ services:
       - cooling-service
     restart: unless-stopped
 
+  hash-service:
+    build:
+      context: .
+      dockerfile: HashService/Dockerfile
+    ports:
+      - "7004:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+    restart: unless-stopped

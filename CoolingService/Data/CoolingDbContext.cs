@@ -3,10 +3,8 @@ using T_API.Shared.Models;
 
 namespace CoolingService.Data;
 
-public class CoolingDbContext : DbContext
+public class CoolingDbContext(DbContextOptions<CoolingDbContext> options) : DbContext(options)
 {
-    public CoolingDbContext(DbContextOptions<CoolingDbContext> options) : base(options) { }
-
     public DbSet<CoolingPeriodItem> CoolingPeriods { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -16,7 +14,7 @@ public class CoolingDbContext : DbContext
             entity.ToTable("cooling_settings");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.UserId).HasColumnName("user_id").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.UserId).HasColumnName("user_id");
             entity.Property(e => e.PriceFrom).HasColumnName("price_from").HasPrecision(18, 2);
             entity.Property(e => e.PriceTo).HasColumnName("price_to").HasPrecision(18, 2);
             entity.Property(e => e.CoolingDays).HasColumnName("cooling_days");

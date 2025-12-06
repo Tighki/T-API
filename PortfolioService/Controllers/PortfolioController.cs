@@ -1,196 +1,114 @@
 using Microsoft.AspNetCore.Mvc;
 using T_API.Shared.DTOs;
 using T_API.Shared.Models;
+using T_API.Shared.Validation;
+using T_API.Shared.Constants;
 using PortfolioService.Services;
 
 namespace PortfolioService.Controllers;
 
 [ApiController]
-[Route("api/v1/portfolio")]
-public class PortfolioController : ControllerBase
+[Route(Routes.Portfolio)]
+public class PortfolioController(
+    IPortfolioRepository repository,
+    ICoolingCalculator coolingCalculator,
+    IUserServiceClient userServiceClient,
+    TokenGenerator tokenGenerator) : ControllerBase
 {
-    private readonly IPortfolioRepository _repository;
-    private readonly ICoolingCalculator _coolingCalculator;
-    private readonly IUserServiceClient _userServiceClient;
-    private readonly TokenGenerator _tokenGenerator;
-    private readonly ILogger<PortfolioController> _logger;
-
-    public PortfolioController(
-        IPortfolioRepository repository,
-        ICoolingCalculator coolingCalculator,
-        IUserServiceClient userServiceClient,
-        TokenGenerator tokenGenerator,
-        ILogger<PortfolioController> logger)
-    {
-        _repository = repository;
-        _coolingCalculator = coolingCalculator;
-        _userServiceClient = userServiceClient;
-        _tokenGenerator = tokenGenerator;
-        _logger = logger;
-    }
-
-    /// <summary>
-    /// Получить все цели пользователя
-    /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(List<GoalItemResponse>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetPortfolio([FromHeader(Name = "X-User-Id")] string userId)
+    public async Task<IActionResult> GetPortfolio([FromHeader(Name = Headers.UserId)] int userId)
     {
-        if (string.IsNullOrWhiteSpace(userId))
-            return BadRequest(new { error = "User ID is required in X-User-Id header" });
-
-        var goals = await _repository.GetGoalsAsync(userId);
-        var response = goals.Select(g => MapToResponse(g)).ToList();
-
-        return Ok(response);
+        if (!ValidationRules.IsValidUserId(userId))
+            return BadRequest(new { error = ErrorMessages.InvalidUserId });
+        return Ok((await repository.GetGoalsAsync(userId)).Select(MapToResponse));
     }
 
-    /// <summary>
-    /// Получить цель по ID
-    /// </summary>
     [HttpGet("{id}")]
-    [ProducesResponseType(typeof(GoalItemResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetPortfolioItem(
-        [FromHeader(Name = "X-User-Id")] string userId,
-        int id)
+    public async Task<IActionResult> GetPortfolioItem([FromHeader(Name = Headers.UserId)] int userId, int id)
     {
-        if (string.IsNullOrWhiteSpace(userId))
-            return BadRequest(new { error = "User ID is required in X-User-Id header" });
-
-        var goal = await _repository.GetGoalByIdAsync(userId, id);
-        if (goal == null)
-            return NotFound(new { error = "Goal not found" });
-
-        return Ok(MapToResponse(goal));
+        if (!ValidationRules.IsValidUserId(userId))
+            return BadRequest(new { error = ErrorMessages.InvalidUserId });
+        var goal = await repository.GetGoalByIdAsync(userId, id);
+        return goal == null ? NotFound(new { error = ErrorMessages.NotFound }) : Ok(MapToResponse(goal));
     }
 
-    /// <summary>
-    /// Добавить новую цель (покупку)
-    /// </summary>
     [HttpPost]
-    [ProducesResponseType(typeof(GoalItemResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> AddGoal(
-        [FromHeader(Name = "X-User-Id")] string userId,
-        [FromBody] AddGoalRequest request)
+    public async Task<IActionResult> AddGoal([FromHeader(Name = Headers.UserId)] int userId, [FromBody] AddGoalRequest req)
     {
-        if (string.IsNullOrWhiteSpace(userId))
-            return BadRequest(new { error = "User ID is required in X-User-Id header" });
+        if (!ValidationRules.IsValidUserId(userId))
+            return BadRequest(new { error = ErrorMessages.InvalidUserId });
+        if (!ValidationRules.IsValidName(req.Name))
+            return BadRequest(new { error = ErrorMessages.MaxLength("Name", ValidationRules.MaxNameLength) });
+        if (!ValidationRules.IsValidUrl(req.Url))
+            return BadRequest(new { error = ErrorMessages.MaxLength("URL", ValidationRules.MaxUrlLength) });
+        if (!ValidationRules.IsValidCategory(req.Category))
+            return BadRequest(new { error = ErrorMessages.MaxLength("Category", ValidationRules.MaxCategoryLength) });
+        if (!ValidationRules.IsValidPrice(req.Price))
+            return BadRequest(new { error = ErrorMessages.InvalidPrice });
 
-        if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest(new { error = "Goal name is required" });
+        var prefs = await userServiceClient.GetUserPreferencesAsync(userId);
+        if (prefs != null && coolingCalculator.IsCategoryBlacklisted(req.Category, prefs.BlacklistedCategories))
+            return BadRequest(new { error = ErrorMessages.CategoryBlacklisted, message = $"'{req.Category}' запрещена" });
 
-        if (request.Price <= 0)
-            return BadRequest(new { error = "Price must be positive" });
-
-        var preferences = await _userServiceClient.GetUserPreferencesAsync(userId);
-
-        if (preferences != null && 
-            _coolingCalculator.IsCategoryBlacklisted(request.Category, preferences.BlacklistedCategories))
+        var coolingDays = await coolingCalculator.CalculateCoolingDaysAsync(req.Price, userId);
+        if (prefs?.ConsiderSavings == true)
         {
-            return BadRequest(new
-            {
-                error = "Category is blacklisted",
-                message = $"Покупки из категории '{request.Category}' запрещены вашими настройками"
-            });
-        }
-
-        var coolingDays = await _coolingCalculator.CalculateCoolingDaysAsync(request.Price, userId);
-        
-        if (preferences?.ConsiderSavings == true)
-        {
-            var savingsDays = _coolingCalculator.CalculateSavingsRequiredDays(
-                request.Price,
-                preferences.CurrentSavings,
-                preferences.MonthlySavings);
-
-            if (savingsDays.HasValue)
-                coolingDays = Math.Max(coolingDays, savingsDays.Value);
+            var savingsDays = coolingCalculator.CalculateSavingsRequiredDays(req.Price, prefs.CurrentSavings, prefs.MonthlySavings);
+            if (savingsDays.HasValue) coolingDays = Math.Max(coolingDays, savingsDays.Value);
         }
 
         var goal = new GoalItem
         {
-            UserId = userId,
-            Name = request.Name,
-            Url = request.Url,
-            Price = request.Price,
-            Category = request.Category,
-            CoolingUntil = _coolingCalculator.CalculateCoolingEndDate(coolingDays),
-            Status = GoalStatus.Cooling
+            UserId = userId, Name = req.Name, Url = req.Url, Price = req.Price, Category = req.Category,
+            CoolingUntil = coolingCalculator.CalculateCoolingEndDate(coolingDays), Status = GoalStatus.Cooling,
+            PriceGap = prefs != null && req.Price > prefs.CurrentSavings ? req.Price - prefs.CurrentSavings : null
         };
-
-        if (preferences != null && request.Price > preferences.CurrentSavings)
-            goal.PriceGap = request.Price - preferences.CurrentSavings;
-
-        var saved = await _repository.AddGoalAsync(goal);
-        var response = MapToResponse(saved);
-
-        return CreatedAtAction(nameof(GetPortfolioItem), new { id = saved.Id }, response);
+        var saved = await repository.AddGoalAsync(goal);
+        return CreatedAtAction(nameof(GetPortfolioItem), new { id = saved.Id }, MapToResponse(saved));
     }
 
-    /// <summary>
-    /// Обновить цель по ID
-    /// </summary>
     [HttpPut("{id}")]
-    [ProducesResponseType(typeof(GoalItemResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> UpdateGoal(
-        [FromHeader(Name = "X-User-Id")] string userId,
-        int id,
-        [FromBody] UpdateGoalRequest request)
+    public async Task<IActionResult> UpdateGoal([FromHeader(Name = Headers.UserId)] int userId, int id, [FromBody] UpdateGoalRequest req)
     {
-        if (string.IsNullOrWhiteSpace(userId))
-            return BadRequest(new { error = "User ID is required in X-User-Id header" });
+        if (!ValidationRules.IsValidUserId(userId))
+            return BadRequest(new { error = ErrorMessages.InvalidUserId });
+        var existing = await repository.GetGoalByIdAsync(userId, id);
+        if (existing == null) return NotFound(new { error = ErrorMessages.NotFound });
 
-        var existing = await _repository.GetGoalByIdAsync(userId, id);
-        if (existing == null)
-            return NotFound(new { error = "Goal not found" });
+        if (!string.IsNullOrWhiteSpace(req.Name))
+        {
+            if (!ValidationRules.IsValidName(req.Name))
+                return BadRequest(new { error = ErrorMessages.MaxLength("Name", ValidationRules.MaxNameLength) });
+            existing.Name = req.Name;
+        }
+        if (req.Price is > 0)
+        {
+            if (!ValidationRules.IsValidPrice(req.Price.Value))
+                return BadRequest(new { error = ErrorMessages.InvalidPrice });
+            existing.Price = req.Price.Value;
+        }
+        if (!string.IsNullOrWhiteSpace(req.Category))
+        {
+            if (!ValidationRules.IsValidCategory(req.Category))
+                return BadRequest(new { error = ErrorMessages.MaxLength("Category", ValidationRules.MaxCategoryLength) });
+            existing.Category = req.Category;
+        }
 
-        if (!string.IsNullOrWhiteSpace(request.Name))
-            existing.Name = request.Name;
-
-        if (request.Price.HasValue && request.Price.Value > 0)
-            existing.Price = request.Price.Value;
-
-        if (!string.IsNullOrWhiteSpace(request.Category))
-            existing.Category = request.Category;
-
-        var updated = await _repository.UpdateGoalAsync(existing);
-        return Ok(MapToResponse(updated!));
+        return Ok(MapToResponse((await repository.UpdateGoalAsync(existing))!));
     }
 
-    /// <summary>
-    /// Удалить цель по ID
-    /// </summary>
     [HttpDelete("{id}")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> DeleteGoal(
-        [FromHeader(Name = "X-User-Id")] string userId,
-        int id)
+    public async Task<IActionResult> DeleteGoal([FromHeader(Name = Headers.UserId)] int userId, int id)
     {
-        if (string.IsNullOrWhiteSpace(userId))
-            return BadRequest(new { error = "User ID is required in X-User-Id header" });
-
-        var deleted = await _repository.DeleteGoalAsync(userId, id);
-        if (!deleted)
-            return NotFound(new { error = "Goal not found" });
-
-        return NoContent();
+        if (!ValidationRules.IsValidUserId(userId))
+            return BadRequest(new { error = ErrorMessages.InvalidUserId });
+        return await repository.DeleteGoalAsync(userId, id) ? NoContent() : NotFound(new { error = ErrorMessages.NotFound });
     }
 
-    private GoalItemResponse MapToResponse(GoalItem goal) => new()
+    private GoalItemResponse MapToResponse(GoalItem g) => new()
     {
-        Id = goal.Id,
-        Name = goal.Name,
-        Url = goal.Url,
-        Price = goal.Price,
-        PriceGap = goal.PriceGap,
-        Category = goal.Category,
-        AddedAt = goal.AddedAt,
-        CoolingUntil = goal.CoolingUntil,
-        Status = goal.Status,
-        BearerToken = _tokenGenerator.GenerateToken(goal.UserId, goal.Id)
+        Id = g.Id, Name = g.Name, Url = g.Url, Price = g.Price, PriceGap = g.PriceGap,
+        Category = g.Category, AddedAt = g.AddedAt, CoolingUntil = g.CoolingUntil,
+        Status = g.Status, BearerToken = tokenGenerator.GenerateToken(g.UserId, g.Id)
     };
 }

@@ -1,65 +1,52 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using System.Threading.RateLimiting;
 using UserService.Data;
 using UserService.Services;
+using T_API.Shared.Filters;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
-
-// PostgreSQL
-builder.Services.AddDbContext<UserDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
-
+builder.Services.AddControllers(o => o.Filters.Add<SanitizeInputFilter>());
+builder.Services.AddDbContext<UserDbContext>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 
+builder.Services.AddRateLimiter(o =>
+{
+    o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            ctx.Request.Headers["X-User-Id"].ToString() ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 100, Window = TimeSpan.FromMinutes(1) }));
+    o.RejectionStatusCode = 429;
+});
+
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
+builder.Services.AddSwaggerGen(o =>
 {
-    options.SwaggerDoc("v1", new OpenApiInfo
+    o.SwaggerDoc("v1", new OpenApiInfo { Title = "User Service", Version = "v1" });
+    o.AddSecurityDefinition("X-User-Id", new OpenApiSecurityScheme
     {
-        Title = "User Service API",
-        Version = "v1",
-        Description = "Сервис управления настройками пользователей"
+        Type = SecuritySchemeType.ApiKey, In = ParameterLocation.Header, Name = "X-User-Id"
     });
-
-    options.AddSecurityDefinition("X-User-Id", new OpenApiSecurityScheme
+    o.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
-        Type = SecuritySchemeType.ApiKey,
-        In = ParameterLocation.Header,
-        Name = "X-User-Id",
-        Description = "Идентификатор пользователя"
-    });
-
-    options.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference 
-                { 
-                    Type = ReferenceType.SecurityScheme, 
-                    Id = "X-User-Id" 
-                }
-            },
-            Array.Empty<string>()
-        }
+        { new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "X-User-Id" } }, [] }
     });
 });
 
-builder.Services.AddCors(options =>
+builder.Services.AddCors(o => o.AddPolicy("Default", p =>
 {
-    options.AddDefaultPolicy(policy =>
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
-});
+    if (builder.Environment.IsDevelopment())
+        p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+    else
+        p.WithOrigins(builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [])
+         .AllowAnyMethod().AllowAnyHeader();
+}));
 
 var app = builder.Build();
-
-
 app.UseSwagger();
 app.UseSwaggerUI();
-app.UseCors();
-app.UseAuthorization();
+app.UseCors("Default");
+app.UseRateLimiter();
 app.MapControllers();
-
 app.Run();

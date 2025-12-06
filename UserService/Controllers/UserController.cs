@@ -1,82 +1,54 @@
 using Microsoft.AspNetCore.Mvc;
 using T_API.Shared.DTOs;
 using T_API.Shared.Models;
+using T_API.Shared.Validation;
+using T_API.Shared.Constants;
 using UserService.Services;
 
 namespace UserService.Controllers;
 
 [ApiController]
-[Route("api/v1/user")]
-public class UserController : ControllerBase
+[Route(Routes.User)]
+public class UserController(IUserRepository repository) : ControllerBase
 {
-    private readonly IUserRepository _repository;
-    private readonly ILogger<UserController> _logger;
-
-    public UserController(IUserRepository repository, ILogger<UserController> logger)
-    {
-        _repository = repository;
-        _logger = logger;
-    }
-
-    /// <summary>
-    /// Получить настройки пользователя
-    /// </summary>
     [HttpGet("preferences")]
-    [ProducesResponseType(typeof(UserPreferencesResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetPreferences([FromHeader(Name = "X-User-Id")] string userId)
+    public async Task<IActionResult> GetPreferences([FromHeader(Name = Headers.UserId)] int userId)
     {
-        if (string.IsNullOrWhiteSpace(userId))
-            return BadRequest(new { error = "User ID is required in X-User-Id header" });
-
-        var preferences = await _repository.GetUserPreferencesAsync(userId);
-        if (preferences == null)
-            return NotFound(new { error = "User preferences not found" });
-
-        return Ok(MapToResponse(preferences));
+        if (!ValidationRules.IsValidUserId(userId))
+            return BadRequest(new { error = ErrorMessages.InvalidUserId });
+        var prefs = await repository.GetUserPreferencesAsync(userId);
+        return prefs == null ? NotFound(new { error = ErrorMessages.NotFound }) : Ok(MapToResponse(prefs));
     }
 
-    /// <summary>
-    /// Обновить настройки пользователя
-    /// </summary>
     [HttpPut("preferences")]
-    [ProducesResponseType(typeof(UserPreferencesResponse), StatusCodes.Status200OK)]
-    public async Task<IActionResult> UpdatePreferences(
-        [FromHeader(Name = "X-User-Id")] string userId,
-        [FromBody] UserPreferencesRequest request)
+    public async Task<IActionResult> UpdatePreferences([FromHeader(Name = Headers.UserId)] int userId, [FromBody] UserPreferencesRequest req)
     {
-        if (string.IsNullOrWhiteSpace(userId))
-            return BadRequest(new { error = "User ID is required in X-User-Id header" });
+        if (!ValidationRules.IsValidUserId(userId))
+            return BadRequest(new { error = ErrorMessages.InvalidUserId });
+        if (req.MonthlySavings < 0 || req.CurrentSavings < 0)
+            return BadRequest(new { error = ErrorMessages.SavingsNegative });
+        if (req.BlacklistedCategories.Any(c => c.Length > ValidationRules.MaxCategoryLength))
+            return BadRequest(new { error = ErrorMessages.MaxLength("Category", ValidationRules.MaxCategoryLength) });
 
-        if (request.MonthlySavings < 0 || request.CurrentSavings < 0)
-            return BadRequest(new { error = "Savings values cannot be negative" });
-
-        var preferences = new UserPreferences
+        var prefs = new UserPreferences
         {
             UserId = userId,
-            BlacklistedCategories = request.BlacklistedCategories,
-            MonthlySavings = request.MonthlySavings,
-            CurrentSavings = request.CurrentSavings,
-            ConsiderSavings = request.ConsiderSavings,
-            NotificationFrequency = request.NotificationFrequency
+            BlacklistedCategories = req.BlacklistedCategories,
+            MonthlySavings = req.MonthlySavings,
+            CurrentSavings = req.CurrentSavings,
+            ConsiderSavings = req.ConsiderSavings,
+            NotificationFrequency = req.NotificationFrequency
         };
-
-        var saved = await _repository.SaveUserPreferencesAsync(preferences);
-        return Ok(MapToResponse(saved));
+        return Ok(MapToResponse(await repository.SaveUserPreferencesAsync(prefs)));
     }
 
-    /// <summary>
-    /// Проверить наличие пользователя
-    /// </summary>
     [HttpGet("exists")]
-    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-    public async Task<IActionResult> CheckUserExists([FromHeader(Name = "X-User-Id")] string userId)
+    public async Task<IActionResult> CheckUserExists([FromHeader(Name = Headers.UserId)] int userId)
     {
-        if (string.IsNullOrWhiteSpace(userId))
-            return BadRequest(new { error = "User ID is required in X-User-Id header" });
-
-        var preferences = await _repository.GetUserPreferencesAsync(userId);
-        return Ok(new { exists = preferences != null, userId });
+        if (!ValidationRules.IsValidUserId(userId))
+            return BadRequest(new { error = ErrorMessages.InvalidUserId });
+        var prefs = await repository.GetUserPreferencesAsync(userId);
+        return Ok(new { exists = prefs != null, userId });
     }
 
     private static UserPreferencesResponse MapToResponse(UserPreferences p) => new()

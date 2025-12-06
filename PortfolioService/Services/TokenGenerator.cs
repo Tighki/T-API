@@ -2,12 +2,6 @@ namespace PortfolioService.Services;
 
 public class TokenGenerator
 {
-    public string GenerateToken(string userId, int goalId)
-    {
-        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var data = $"{userId}:{goalId}:{timestamp}";
-        var bytes = System.Text.Encoding.UTF8.GetBytes(data);
-        return Convert.ToBase64String(bytes);
-    }
+    public string GenerateToken(int userId, int goalId) =>
+        Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{userId}:{goalId}:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}"));
 }
-

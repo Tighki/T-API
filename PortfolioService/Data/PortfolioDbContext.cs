@@ -3,10 +3,8 @@ using T_API.Shared.Models;
 
 namespace PortfolioService.Data;
 
-public class PortfolioDbContext : DbContext
+public class PortfolioDbContext(DbContextOptions<PortfolioDbContext> options) : DbContext(options)
 {
-    public PortfolioDbContext(DbContextOptions<PortfolioDbContext> options) : base(options) { }
-
     public DbSet<GoalItem> Goals { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -16,7 +14,7 @@ public class PortfolioDbContext : DbContext
             entity.ToTable("goal_items");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.UserId).HasColumnName("user_id").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.UserId).HasColumnName("user_id");
             entity.Property(e => e.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
             entity.Property(e => e.Url).HasColumnName("url");
             entity.Property(e => e.Price).HasColumnName("price").HasPrecision(18, 2);
