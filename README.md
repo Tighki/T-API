@@ -7,16 +7,16 @@
 ```bash
 dotnet build
 # Запустите 3 терминала:
-cd CoolingService && dotnet run     # https://localhost:7001/swagger
-cd UserService && dotnet run         # https://localhost:7002/swagger  
-cd PortfolioService && dotnet run    # https://localhost:7003/swagger
+cd CoolingService && dotnet run     # https://localhost:5001/swagger
+cd UserService && dotnet run         # https://localhost:5002/swagger  
+cd PortfolioService && dotnet run    # https://localhost:5003/swagger
 ```
 
 ## Архитектура
 
-- **CoolingService** (7001) - Диапазоны охлаждения
-- **UserService** (7002) - Настройки пользователей
-- **PortfolioService** (7003) - Портфолио покупок + вызовы других сервисов
+- **CoolingService** (5001) - Диапазоны охлаждения
+- **UserService** (5002) - Настройки пользователей
+- **PortfolioService** (5003) - Портфолио покупок + вызовы других сервисов
 
 ## API
 
