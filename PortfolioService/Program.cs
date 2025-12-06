@@ -7,8 +7,6 @@ builder.Services.AddControllers();
 builder.Services.AddSingleton<IDataStore, InMemoryDataStore>();
 builder.Services.AddScoped<ICoolingCalculator, CoolingCalculator>();
 builder.Services.AddSingleton<TokenGenerator>();
-
-// HTTP клиенты для межсервисного взаимодействия
 builder.Services.AddHttpClient<IUserServiceClient, UserServiceClient>();
 builder.Services.AddHttpClient<ICoolingServiceClient, CoolingServiceClient>();
 
